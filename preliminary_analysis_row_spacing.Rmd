@@ -1,0 +1,161 @@
+---
+title: "Preliminary analysis of row spacing data"
+author: "Quentin D. Read"
+date: "6/6/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+Load packages.
+
+```{r}
+library(tidyverse)
+library(readxl)
+library(lme4)
+library(emmeans)
+library(ordinal)
+```
+
+```{r, echo = FALSE}
+windowsFonts(`fgbook` = windowsFont("Franklin Gothic Book"))
+theme_set(
+  theme_bw(base_family = 'fgbook') +
+    theme(strip.background = element_blank(),
+          panel.grid = element_blank())
+  )
+```
+
+Separate data into by-plot and by-individual data. This requires some reshaping.
+
+```{r}
+dat <- read_xlsx('data/mengistu/project3/Updated Seed Rt Row Sp combined data 2021.xlsx', skip = 2, na = '.') %>%
+  mutate(Plot = factor(Plot), Rep = factor(Rep), RwSp = factor(RwSp), SdRt = factor(SdRt, levels = c('80k', '140k', '200k')), Tmt = factor(TmtName)) %>%
+  rename(SpringSoilCFU_g = `SpringSoilCFU/g`)
+
+dat_severity <- dat %>%
+  select(Plot, Tmt, Rep, RwSp, SdRt, `1...7`, `2...8`, `3...9`, `4...10`, `5...11`) %>%
+  pivot_longer(`1...7`:`5...11`, names_to = 'id', values_to = 'severity') %>%
+  mutate(id = str_extract(id, '[1-5]'))
+
+dat_CFU <- dat %>%
+  select(Plot, Tmt, Rep, RwSp, SdRt, `1...13`, `2...14`, `3...15`, `4...16`, `5...17`) %>%
+  pivot_longer(`1...13`:`5...17`, names_to = 'id', values_to = 'CFU') %>%
+  mutate(id = str_extract(id, '[1-5]'))
+
+dat_indiv <- left_join(dat_severity, dat_CFU)
+
+dat_plot <- dat %>%
+  select(Plot, Tmt, Rep, RwSp, SdRt, SevAvg, SpringSoilCFU_g, YldBuAc, YldKgHa)
+
+dat_indiv <- left_join(dat_indiv, dat_plot)
+```
+
+## Exploratory plots
+
+### Severity
+
+Take a look at the severity as a function of the different treatments and the covariate of the baseline CFU. Just use the plot level averages for now.
+
+This plot makes it look like there is little relationship between severity and the baseline CFU, but the Asgrow has a much higher severity than the local seed.
+
+```{r}
+ggplot(dat_plot, aes(x = SpringSoilCFU_g, y = SevAvg, color = Tmt)) +
+  geom_point()
+```
+
+In contrast this plot makes it look like possibly severity decreases with seeding rate, though there is a lot of noise. It does not look like row spacing or the interaction of row spacing and seeding rate has much effect on severity.
+
+```{r}
+ggplot(dat_plot, aes(x = RwSp, y = SevAvg, color = RwSp)) +
+  geom_boxplot() +
+  facet_wrap(~ SdRt)
+```  
+
+For the interaction between row spacing and seed type, it seems like there will not be much of one. The Asgrow has higher severity across all row spacing.
+
+```{r}
+ggplot(dat_plot, aes(x = RwSp, y = SevAvg, color = RwSp)) +
+  geom_boxplot() +
+  facet_wrap(~ Tmt)
+```  
+
+
+Finally, for the interaction between seeding rate and seed type, it also does not look like there will be one as the lower seeding rate has higher severity regardless of seed type.
+
+```{r}
+ggplot(dat_plot, aes(x = SdRt, y = SevAvg, color = SdRt)) +
+  geom_boxplot() +
+  facet_wrap(~ Tmt)
+```  
+
+### Yield
+
+Again we see no effect of the baseline soil pathogen density but a higher yield for LocalSeed compared to Asgrow.
+
+```{r}
+ggplot(dat_plot, aes(x = SpringSoilCFU_g, y = YldKgHa, color = Tmt)) +
+  geom_point()
+```
+
+Here we see yield might increase with seeding rate and decrease with row spacing. Just from looking at it there is not a strong interaction.
+
+```{r}
+ggplot(dat_plot, aes(x = RwSp, y = YldKgHa, color = RwSp)) +
+  geom_boxplot() +
+  facet_wrap(~ SdRt)
+```  
+
+We see no visual evidence for interaction between seed type and row spacing. Smaller row spacing is higher yield for both seed types.
+
+```{r}
+ggplot(dat_plot, aes(x = RwSp, y = YldKgHa, color = RwSp)) +
+  geom_boxplot() +
+  facet_wrap(~ Tmt)
+```  
+
+We see no interaction between seeding rate and seed type. High seeding rate has higher yield for both seed types.
+
+```{r}
+ggplot(dat_plot, aes(x = SdRt, y = YldKgHa, color = SdRt)) +
+  geom_boxplot() +
+  facet_wrap(~ Tmt)
+```  
+
+## Statistical models
+
+### Severity
+
+Let's make a model to confirm our first impressions from looking at the graphs. First we will include severity as the response variable. However we'll use the individual plants' severity and include plot as a random effect. The plot-level baseline pathogen will also be a covariate but we can remove this later if needed. We have to use an ordinal regression for severity because it's a categorical ordered variable.
+
+```{r}
+dat_indiv <- mutate(dat_indiv, severity = ordered(severity))
+
+severity_fullmodel <- clmm(severity ~ Tmt * RwSp * SdRt + SpringSoilCFU_g + (1|Rep) + (1|Plot:Rep), data = dat_indiv,
+                           threshold = 'flexible', link = 'logit')
+severity_nocovariate <- clmm(severity ~ Tmt * RwSp * SdRt + (1|Rep) + (1|Plot:Rep), data = dat_indiv,
+                           threshold = 'flexible', link = 'logit')
+```
+
+### Yield
+
+For yield, the likelihood ratio test shows that we don't gain anything by including baseline soil CFUs as a covariate. So I will exclude that.
+
+```{r}
+yield_fullmodel <- lmer(YldKgHa ~ Tmt * RwSp * SdRt + SpringSoilCFU_g + (1|Rep), data = dat_plot) 
+yield_nocovariate <- lmer(YldKgHa ~ Tmt * RwSp * SdRt + (1|Rep), data = dat_plot) 
+
+anova(yield_fullmodel, yield_nocovariate)
+```
+
+Get estimated marginal means for the main effects and interaction effects.
+
+```{r}
+emm_yld_tmt <- emmeans(yield_nocovariate, ~ Tmt)
+emm_yld_rwsp <- emmeans(yield_nocovariate, ~ RwSp)
+emm_yld_sdrt <- emmeans(yield_nocovariate, ~ SdRt)
+```
+
+
