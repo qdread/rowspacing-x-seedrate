@@ -15,23 +15,62 @@ Load packages.
 library(tidyverse)
 library(readxl)
 library(lme4)
+library(lmerTest)
 library(emmeans)
 library(ordinal)
+library(ggsci)
+library(multcomp)
+library(kableExtra)
 ```
 
 ```{r, echo = FALSE}
+select <- dplyr::select
+
 windowsFonts(`fgbook` = windowsFont("Franklin Gothic Book"))
 theme_set(
   theme_bw(base_family = 'fgbook') +
     theme(strip.background = element_blank(),
           panel.grid = element_blank())
   )
+
+seedtype_colorscale <- scale_color_brewer(palette = 'Dark2', name = 'seed type')
+seedtype_fillscale <- scale_fill_brewer(palette = 'Dark2', name = 'seed type')
+
+seedrate_colorscale <- scale_color_jco(name = 'seeding rate')
+seedrate_fillscale <- scale_fill_jco(name = 'seeding rate')
+
+rowspacing_colorscale <- scale_color_npg(name = 'row spacing')
+rowspacing_fillscale <- scale_fill_npg(name = 'row spacing')
+
+CLDplot <- function(cld_obj, xvar, facetvar, yvar, yminvar, ymaxvar, colorvar, colorscale = NULL, xlab, ylab, titlelab, legpos = 'none') {
+  plotdat <- as_tibble(cld_obj)
+  if (!missing(facetvar)) facet <- facet_wrap(vars({{facetvar}})) else facet <- NULL
+  if (!missing(xlab)) lx <- labs(x = xlab) else lx <- NULL
+  if (!missing(ylab)) ly <- labs(y = ylab) else ly <- NULL
+  if (!missing(titlelab)) lt <- ggtitle(titlelab) else lt <- NULL
+  
+  ggplot(plotdat, aes(x = {{xvar}}, y = {{yvar}}, ymin = {{yminvar}}, ymax = {{ymaxvar}}, color = {{colorvar}}, label = trimws(.group))) +
+    geom_errorbar(size = 1, width = 0.1) +
+    geom_point(size = 3, color = 'black') +
+    geom_text(hjust = -1, color = 'black', family = 'fgbook') +
+    facet + lx + ly + lt + colorscale +
+    theme(legend.position = legpos)
+}
+
+CLDtable <- function(cld_obj, sig_figs = 3, table_caption = NULL, cilow, cihigh, trt_labels) {
+  tabledat <- as_tibble(cld_obj) %>%
+    mutate(across(where(is.numeric), signif, digits = sig_figs)) %>%
+    mutate(ci95 = paste0('(', {{cilow}}, ', ', {{cihigh}}, ')')) %>%
+    select(-c({{cilow}}, {{cihigh}})) %>%
+    select(c(!contains('group'), .group))
+  kable(tabledat, caption = table_caption, col.names = c(trt_labels, 'estimate', 'std. error', 'df', '95% CI', ''))
+}
 ```
 
 Separate data into by-plot and by-individual data. This requires some reshaping.
 
 ```{r}
-dat <- read_xlsx('data/mengistu/project3/Updated Seed Rt Row Sp combined data 2021.xlsx', skip = 2, na = '.') %>%
+dat <- read_xlsx('project/Updated Seed Rt Row Sp combined data 2021.xlsx', skip = 2, na = '.') %>%
   mutate(Plot = factor(Plot), Rep = factor(Rep), RwSp = factor(RwSp), SdRt = factor(SdRt, levels = c('80k', '140k', '200k')), Tmt = factor(TmtName)) %>%
   rename(SpringSoilCFU_g = `SpringSoilCFU/g`)
 
@@ -57,71 +96,95 @@ dat_indiv <- left_join(dat_indiv, dat_plot)
 
 ### Severity
 
-Take a look at the severity as a function of the different treatments and the covariate of the baseline CFU. Just use the plot level averages for now.
+Take a look at the severity as a function of the different seed type treatments and the covariate of the baseline CFU. Just use the plot level averages for now.
 
-This plot makes it look like there is little relationship between severity and the baseline CFU, but the Asgrow has a much higher severity than the local seed.
+This plot makes it look like there is little relationship between severity and the baseline CFU, but Asgrow has a higher severity than the local seed.
 
-```{r}
+```{r sevplot1, echo = FALSE}
 ggplot(dat_plot, aes(x = SpringSoilCFU_g, y = SevAvg, color = Tmt)) +
-  geom_point()
+  geom_point() +
+  seedtype_colorscale +
+  theme(legend.position = c(0.9, 0.15)) +
+  labs(x = 'spring soil CFU/g', y = 'severity (average score)')
 ```
 
 In contrast this plot makes it look like possibly severity decreases with seeding rate, though there is a lot of noise. It does not look like row spacing or the interaction of row spacing and seeding rate has much effect on severity.
 
-```{r}
-ggplot(dat_plot, aes(x = RwSp, y = SevAvg, color = RwSp)) +
+```{r sevplot2, echo = FALSE}
+ggplot(dat_plot, aes(x = RwSp, y = SevAvg, fill = RwSp)) +
   geom_boxplot() +
-  facet_wrap(~ SdRt)
+  facet_wrap(~ SdRt, labeller = as_labeller(\(x) paste('seeding rate:', x))) +
+  rowspacing_fillscale +
+  theme(legend.position = 'none') +
+  labs(x = 'row spacing', y = 'severity (average score)')
 ```  
 
 For the interaction between row spacing and seed type, it seems like there will not be much of one. The Asgrow has higher severity across all row spacing.
 
-```{r}
-ggplot(dat_plot, aes(x = RwSp, y = SevAvg, color = RwSp)) +
+```{r sevplot3, echo = FALSE}
+ggplot(dat_plot, aes(x = RwSp, y = SevAvg, fill = RwSp)) +
   geom_boxplot() +
-  facet_wrap(~ Tmt)
+  facet_wrap(~ Tmt) +
+  rowspacing_fillscale +
+  theme(legend.position = 'none') +
+  labs(x = 'row spacing', y = 'severity (average score)')
 ```  
 
 
 Finally, for the interaction between seeding rate and seed type, it also does not look like there will be one as the lower seeding rate has higher severity regardless of seed type.
 
-```{r}
-ggplot(dat_plot, aes(x = SdRt, y = SevAvg, color = SdRt)) +
+```{r sevplot4, echo = FALSE}
+ggplot(dat_plot, aes(x = SdRt, y = SevAvg, fill = SdRt)) +
   geom_boxplot() +
-  facet_wrap(~ Tmt)
+  facet_wrap(~ Tmt) +
+  seedrate_fillscale +
+  theme(legend.position = 'none') +
+  labs(x = 'seeding rate', y = 'severity (average score)')
 ```  
 
 ### Yield
 
 Again we see no effect of the baseline soil pathogen density but a higher yield for LocalSeed compared to Asgrow.
 
-```{r}
+```{r yldplot1, echo = FALSE}
 ggplot(dat_plot, aes(x = SpringSoilCFU_g, y = YldKgHa, color = Tmt)) +
-  geom_point()
+  geom_point() +
+  seedtype_colorscale +
+  theme(legend.position = c(0.9, 0.15)) +
+  labs(x = 'spring soil CFU/g', y = 'yield (kg/ha)')
 ```
 
 Here we see yield might increase with seeding rate and decrease with row spacing. Just from looking at it there is not a strong interaction.
 
-```{r}
-ggplot(dat_plot, aes(x = RwSp, y = YldKgHa, color = RwSp)) +
+```{r yldplot2, echo = FALSE}
+ggplot(dat_plot, aes(x = RwSp, y = YldKgHa, fill = RwSp)) +
   geom_boxplot() +
-  facet_wrap(~ SdRt)
+  facet_wrap(~ SdRt, labeller = as_labeller(\(x) paste('seeding rate:', x))) +
+  rowspacing_fillscale +
+  theme(legend.position = 'none') +
+  labs(x = 'row spacing', y = 'yield (kg/ha)')
 ```  
 
 We see no visual evidence for interaction between seed type and row spacing. Smaller row spacing is higher yield for both seed types.
 
-```{r}
-ggplot(dat_plot, aes(x = RwSp, y = YldKgHa, color = RwSp)) +
+```{r yldplot3, echo = FALSE}
+ggplot(dat_plot, aes(x = RwSp, y = YldKgHa, fill = RwSp)) +
   geom_boxplot() +
-  facet_wrap(~ Tmt)
+  facet_wrap(~ Tmt) +
+  rowspacing_fillscale +
+  theme(legend.position = 'none') +
+  labs(x = 'row spacing', y = 'yield (kg/ha)')
 ```  
 
 We see no interaction between seeding rate and seed type. High seeding rate has higher yield for both seed types.
 
-```{r}
-ggplot(dat_plot, aes(x = SdRt, y = YldKgHa, color = SdRt)) +
+```{r yldplot4, echo = FALSE}
+ggplot(dat_plot, aes(x = SdRt, y = YldKgHa, fill = SdRt)) +
   geom_boxplot() +
-  facet_wrap(~ Tmt)
+  facet_wrap(~ Tmt) +
+  seedrate_fillscale +
+  theme(legend.position = 'none') +
+  labs(x = 'seeding rate', y = 'yield (kg/ha)')
 ```  
 
 ## Statistical models
@@ -139,9 +202,138 @@ severity_nocovariate <- clmm(severity ~ Tmt * RwSp * SdRt + (1|Rep) + (1|Plot:Re
                            threshold = 'flexible', link = 'logit')
 ```
 
+Do a likelihood ratio test for the models with and without the baseline soil CFUs as a covariate. We see that the model with no covariate is superior so we can analyze the results of the model that doesn't include the covariate.
+
+```{r}
+anova(severity_fullmodel, severity_nocovariate)
+```
+
+Because this is an ordinal regression it is not straightforward to get an ANOVA style table. However we can look at the significance of individual model coefficients. We see that there are significant main effects for seed type and seeding rate, but not row spacing. There is a significant interaction between row spacing and seed rate, and also significant three-way interactions.  
+
+```{r}
+summary(severity_nocovariate)
+```
+
+Let's take a look at the main effects and two-way and three-way interactions. Get estimated marginal means for the main effects and interaction effects. We set the mode to `"mean.class"` to get the predicted average severity as if it were a numeric value. Then do multiple comparisons, adjusting the p-values and 95% confidence intervals if there are >2 groups being compared.
+
+```{r}
+spec_list <- list(~ Tmt, ~ RwSp, ~ SdRt, ~ Tmt + RwSp, ~ Tmt + SdRt, ~ RwSp + SdRt, ~ Tmt + RwSp + SdRt)
+
+emm_sev <- emmeans(severity_nocovariate, spec_list, mode = 'mean.class', adjust = 'sidak')
+cld_sev <- lapply(1:length(emm_sev), \(i) cld(emm_sev, which = i, Letters = letters, adjust = 'sidak'))
+```
+
+Make tables and graphs of the results. Each table has the same data used to make the graph.
+
+<div class = "row">
+<div class = "col-md-5">
+```{r, echo = FALSE}
+sev_y <- ylim(0, 3.6)
+
+CLDtable(cld_sev[[1]], table_caption = 'severity by seed type', cilow = asymp.LCL, cihigh = asymp.UCL, trt_labels = 'seed type')
+```
+</div>
+<div class = "col-md-7">
+```{r, echo = FALSE}
+CLDplot(cld_sev[[1]], xvar = Tmt, yvar = mean.class, yminvar = asymp.LCL, ymaxvar = asymp.UCL, colorvar = Tmt, colorscale = seedtype_colorscale,
+        xlab = 'seed type', ylab = 'severity (modeled average score)') + sev_y
+```
+</div>
+</div>
+
+<div class = "row">
+<div class = "col-md-5">
+```{r, echo = FALSE}
+CLDtable(cld_sev[[2]], table_caption = 'severity by row spacing', cilow = asymp.LCL, cihigh = asymp.UCL, trt_labels = 'row spacing')
+```
+</div>
+<div class = "col-md-7">
+```{r, echo = FALSE}
+CLDplot(cld_sev[[2]], xvar = RwSp, yvar = mean.class, yminvar = asymp.LCL, ymaxvar = asymp.UCL, colorvar = RwSp, colorscale = rowspacing_colorscale,
+        xlab = 'row spacing', ylab = 'severity (modeled average score)') + sev_y
+```
+</div>
+</div>
+
+<div class = "row">
+<div class = "col-md-5">
+```{r, echo = FALSE}
+CLDtable(cld_sev[[3]], table_caption = 'severity by seeding rate', cilow = asymp.LCL, cihigh = asymp.UCL, trt_labels = 'seeding rate')
+```
+</div>
+<div class = "col-md-7">
+```{r, echo = FALSE}
+CLDplot(cld_sev[[3]], xvar = SdRt, yvar = mean.class, yminvar = asymp.LCL, ymaxvar = asymp.UCL, colorvar = SdRt, colorscale = seedrate_colorscale,
+        xlab = 'seeding rate', ylab = 'severity (modeled average score)') + sev_y
+```
+</div>
+</div>
+
+<div class = "row">
+<div class = "col-md-5">
+```{r, echo = FALSE}
+CLDtable(cld_sev[[4]], table_caption = 'severity by seed type x row spacing', cilow = asymp.LCL, cihigh = asymp.UCL, trt_labels = c('seed type', 'row spacing'))
+```
+</div>
+<div class = "col-md-7">
+```{r, echo = FALSE}
+CLDplot(cld_sev[[4]], xvar = RwSp, yvar = mean.class, yminvar = asymp.LCL, ymaxvar = asymp.UCL, colorvar = RwSp, colorscale = rowspacing_colorscale,
+        facetvar = Tmt, xlab = 'row spacing', ylab = 'severity (modeled average score)') + sev_y
+```
+</div>
+</div>
+
+<div class = "row">
+<div class = "col-md-5">
+```{r, echo = FALSE}
+CLDtable(cld_sev[[5]], table_caption = 'severity by seed type x seeding rate', cilow = asymp.LCL, cihigh = asymp.UCL, trt_labels = c('seed type', 'seeding rate'))
+```
+</div>
+<div class = "col-md-7">
+```{r, echo = FALSE}
+CLDplot(cld_sev[[5]], xvar = SdRt, yvar = mean.class, yminvar = asymp.LCL, ymaxvar = asymp.UCL, colorvar = SdRt, colorscale = seedrate_colorscale,
+        facetvar = Tmt, xlab = 'seeding rate', ylab = 'severity (modeled average score)') + sev_y
+```
+</div>
+</div>
+
+<div class = "row">
+<div class = "col-md-5">
+```{r, echo = FALSE}
+CLDtable(cld_sev[[6]], table_caption = 'severity by row spacing x seeding rate', cilow = asymp.LCL, cihigh = asymp.UCL, trt_labels = c('row spacing', 'seeding rate'))
+```
+</div>
+<div class = "col-md-7">
+```{r, echo = FALSE}
+CLDplot(cld_sev[[6]], xvar = RwSp, yvar = mean.class, yminvar = asymp.LCL, ymaxvar = asymp.UCL, colorvar = RwSp, colorscale = rowspacing_colorscale,
+        facetvar = SdRt, xlab = 'row spacing', ylab = 'severity (modeled average score)') +
+  facet_wrap(~ SdRt, labeller = as_labeller(\(x) paste('seeding rate:', x))) + sev_y
+```
+</div>
+</div>
+
+<div class = "row">
+<div class = "col-md-5">
+```{r, echo = FALSE}
+CLDtable(cld_sev[[7]], table_caption = 'severity by 3-way interaction', cilow = asymp.LCL, cihigh = asymp.UCL, trt_labels = c('seed type', 'row spacing', 'seeding rate'))
+```
+</div>
+<div class = "col-md-7">
+```{r, echo = FALSE}
+ggplot(as_tibble(cld_sev[[7]]), aes(x = RwSp, y = mean.class, ymin = asymp.LCL, ymax = asymp.UCL, label = trimws(.group))) +
+  geom_errorbar(size = 1, width = 0.1, aes(color = RwSp)) +
+  geom_point(size = 3) +
+  geom_text(hjust = 0, nudge_x = 0.1) +
+  facet_grid(Tmt ~ SdRt, labeller = labeller(SdRt = as_labeller(\(x) paste('seeding rate:', x)))) +
+  rowspacing_colorscale + theme(legend.position = 'none') +
+  labs(x = 'row spacing', y = 'severity (modeled average score)') + sev_y
+```
+</div>
+</div>
+
 ### Yield
 
-For yield, the likelihood ratio test shows that we don't gain anything by including baseline soil CFUs as a covariate. So I will exclude that.
+For yield, the likelihood ratio test also shows that we don't gain anything by including baseline soil CFUs as a covariate. In fact the model with no covariate is slightly better So we can analyze the model that does not include the covariate.
 
 ```{r}
 yield_fullmodel <- lmer(YldKgHa ~ Tmt * RwSp * SdRt + SpringSoilCFU_g + (1|Rep), data = dat_plot) 
@@ -150,12 +342,64 @@ yield_nocovariate <- lmer(YldKgHa ~ Tmt * RwSp * SdRt + (1|Rep), data = dat_plot
 anova(yield_fullmodel, yield_nocovariate)
 ```
 
-Get estimated marginal means for the main effects and interaction effects.
+Make ANOVA table to get overall F-tests for each main and interaction effect. We see that all main effects are significant but no interaction effects.
 
 ```{r}
-emm_yld_tmt <- emmeans(yield_nocovariate, ~ Tmt)
-emm_yld_rwsp <- emmeans(yield_nocovariate, ~ RwSp)
-emm_yld_sdrt <- emmeans(yield_nocovariate, ~ SdRt)
+anova(yield_nocovariate, ddf = 'Kenward-Roger')
 ```
+
+
+Get estimated marginal means for the main effects, skipping the two-way and three-way interactions.
+
+```{r}
+emm_yld <- emmeans(yield_nocovariate, spec_list[1:3], adjust = 'sidak')
+cld_yld <- lapply(1:length(emm_yld), \(i) cld(emm_yld, which = i, Letters = letters, adjust = 'sidak'))
+```
+
+Make plots and tables showing the difference between the treatments, with 95% confidence intervals adjusted for multiple comparisons if there are >2 groups being compared. Again, we see no significant interactions between the treatments for yield so we don't need to worry about creating interaction plots.
+
+<div class = "row">
+<div class = "col-md-5">
+```{r, echo = FALSE}
+yld_y <- ylim(2000, 4610)
+
+CLDtable(cld_yld[[1]], table_caption = 'yield by seed type', cilow = lower.CL, cihigh = upper.CL, trt_labels = 'seed type')
+```
+</div>
+<div class = "col-md-7">
+```{r, echo = FALSE}
+CLDplot(cld_yld[[1]], xvar = Tmt, yvar = emmean, yminvar = lower.CL, ymaxvar = upper.CL, colorvar = Tmt, colorscale = seedtype_colorscale,
+        xlab = 'seed type', ylab = 'yield (kg/ha)') + yld_y
+```
+</div>
+</div>
+
+<div class = "row">
+<div class = "col-md-5">
+```{r, echo = FALSE}
+CLDtable(cld_yld[[2]], table_caption = 'yield by row spacing', cilow = lower.CL, cihigh = upper.CL, trt_labels = 'row spacing')
+```
+</div>
+<div class = "col-md-7">
+```{r, echo = FALSE}
+CLDplot(cld_yld[[2]], xvar = RwSp, yvar = emmean, yminvar = lower.CL, ymaxvar = upper.CL, colorvar = RwSp, colorscale = rowspacing_colorscale,
+        xlab = 'row spacing', ylab = 'yield (kg/ha)') + yld_y
+```
+</div>
+</div>
+
+<div class = "row">
+<div class = "col-md-5">
+```{r, echo = FALSE}
+CLDtable(cld_yld[[3]], table_caption = 'yield by seeding rate', cilow = lower.CL, cihigh = upper.CL, trt_labels = 'seeding rate')
+```
+</div>
+<div class = "col-md-7">
+```{r, echo = FALSE}
+CLDplot(cld_yld[[3]], xvar = SdRt, yvar = emmean, yminvar = lower.CL, ymaxvar = upper.CL, colorvar = SdRt, colorscale = seedrate_colorscale,
+        xlab = 'seeding rate', ylab = 'yield (kg/ha)') + yld_y
+```
+</div>
+</div>
 
 
