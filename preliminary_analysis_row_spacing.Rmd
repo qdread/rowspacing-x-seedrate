@@ -1,13 +1,32 @@
 ---
 title: "Preliminary analysis of row spacing data"
 author: "Quentin D. Read"
-date: "6/6/2022"
+date: "6/9/2022"
 output: html_document
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 ```
+
+# Summary
+
+## Severity
+
+- Localseed has more severe disease than Asgrow.
+- Row spacing of 30 had the lowest disease severity, but 15 row spacing had the highest. 7.5 was in the middle. However the differences were relatively small especially compared to the difference between the two seed sources.
+- 80K seeding rate had the highest disease severity. Again this difference was relatively smaller than the difference between the two seed sources.
+- There were some interactions between the different treatments for disease severity, but they are difficult to interpret biologically and I suspect they may be due to random chance. I would not want to interpret them too much at this point, and would rather wait for more years of data to see what interaction effects we observe in the full dataset.
+
+## Yield
+
+- Yield results are straightforward and follow expectations, with no interactions observed.
+- Localseed has higher yield than Asgrow.
+- Yield decreased as spacing increased.
+- Yield increased as seeding rate increased.
+- The baseline soil CFU levels didn't seem to affect severity or yield that much, so I excluded them from the final model.
+
+# Analysis
 
 Load packages.
 
@@ -63,7 +82,8 @@ CLDtable <- function(cld_obj, sig_figs = 3, table_caption = NULL, cilow, cihigh,
     mutate(ci95 = paste0('(', {{cilow}}, ', ', {{cihigh}}, ')')) %>%
     select(-c({{cilow}}, {{cihigh}})) %>%
     select(c(!contains('group'), .group))
-  kable(tabledat, caption = table_caption, col.names = c(trt_labels, 'estimate', 'std. error', 'df', '95% CI', ''))
+  kable(tabledat, caption = table_caption, col.names = c(trt_labels, 'estimate', 'std. error', 'df', '95% CI', '')) %>%
+    kable_styling(bootstrap_options  = c('responsive', 'striped'))
 }
 ```
 
@@ -225,15 +245,17 @@ cld_sev <- lapply(1:length(emm_sev), \(i) cld(emm_sev, which = i, Letters = lett
 
 Make tables and graphs of the results. Each table has the same data used to make the graph.
 
+#### Severity by seed type
+
 <div class = "row">
-<div class = "col-md-5">
+<div class = "col-md-6">
 ```{r, echo = FALSE}
 sev_y <- ylim(0, 3.6)
 
 CLDtable(cld_sev[[1]], table_caption = 'severity by seed type', cilow = asymp.LCL, cihigh = asymp.UCL, trt_labels = 'seed type')
 ```
 </div>
-<div class = "col-md-7">
+<div class = "col-md-6">
 ```{r, echo = FALSE}
 CLDplot(cld_sev[[1]], xvar = Tmt, yvar = mean.class, yminvar = asymp.LCL, ymaxvar = asymp.UCL, colorvar = Tmt, colorscale = seedtype_colorscale,
         xlab = 'seed type', ylab = 'severity (modeled average score)') + sev_y
@@ -241,13 +263,15 @@ CLDplot(cld_sev[[1]], xvar = Tmt, yvar = mean.class, yminvar = asymp.LCL, ymaxva
 </div>
 </div>
 
+#### Severity by row spacing
+
 <div class = "row">
-<div class = "col-md-5">
+<div class = "col-md-6">
 ```{r, echo = FALSE}
 CLDtable(cld_sev[[2]], table_caption = 'severity by row spacing', cilow = asymp.LCL, cihigh = asymp.UCL, trt_labels = 'row spacing')
 ```
 </div>
-<div class = "col-md-7">
+<div class = "col-md-6">
 ```{r, echo = FALSE}
 CLDplot(cld_sev[[2]], xvar = RwSp, yvar = mean.class, yminvar = asymp.LCL, ymaxvar = asymp.UCL, colorvar = RwSp, colorscale = rowspacing_colorscale,
         xlab = 'row spacing', ylab = 'severity (modeled average score)') + sev_y
@@ -255,13 +279,15 @@ CLDplot(cld_sev[[2]], xvar = RwSp, yvar = mean.class, yminvar = asymp.LCL, ymaxv
 </div>
 </div>
 
+#### Severity by seeding rate
+
 <div class = "row">
-<div class = "col-md-5">
+<div class = "col-md-6">
 ```{r, echo = FALSE}
 CLDtable(cld_sev[[3]], table_caption = 'severity by seeding rate', cilow = asymp.LCL, cihigh = asymp.UCL, trt_labels = 'seeding rate')
 ```
 </div>
-<div class = "col-md-7">
+<div class = "col-md-6">
 ```{r, echo = FALSE}
 CLDplot(cld_sev[[3]], xvar = SdRt, yvar = mean.class, yminvar = asymp.LCL, ymaxvar = asymp.UCL, colorvar = SdRt, colorscale = seedrate_colorscale,
         xlab = 'seeding rate', ylab = 'severity (modeled average score)') + sev_y
@@ -269,56 +295,46 @@ CLDplot(cld_sev[[3]], xvar = SdRt, yvar = mean.class, yminvar = asymp.LCL, ymaxv
 </div>
 </div>
 
-<div class = "row">
-<div class = "col-md-5">
+#### Severity by seed type x row spacing
+
 ```{r, echo = FALSE}
 CLDtable(cld_sev[[4]], table_caption = 'severity by seed type x row spacing', cilow = asymp.LCL, cihigh = asymp.UCL, trt_labels = c('seed type', 'row spacing'))
 ```
-</div>
-<div class = "col-md-7">
+
 ```{r, echo = FALSE}
 CLDplot(cld_sev[[4]], xvar = RwSp, yvar = mean.class, yminvar = asymp.LCL, ymaxvar = asymp.UCL, colorvar = RwSp, colorscale = rowspacing_colorscale,
         facetvar = Tmt, xlab = 'row spacing', ylab = 'severity (modeled average score)') + sev_y
 ```
-</div>
-</div>
 
-<div class = "row">
-<div class = "col-md-5">
+#### Severity by seed type x seeding rate
+
 ```{r, echo = FALSE}
 CLDtable(cld_sev[[5]], table_caption = 'severity by seed type x seeding rate', cilow = asymp.LCL, cihigh = asymp.UCL, trt_labels = c('seed type', 'seeding rate'))
 ```
-</div>
-<div class = "col-md-7">
+
 ```{r, echo = FALSE}
 CLDplot(cld_sev[[5]], xvar = SdRt, yvar = mean.class, yminvar = asymp.LCL, ymaxvar = asymp.UCL, colorvar = SdRt, colorscale = seedrate_colorscale,
         facetvar = Tmt, xlab = 'seeding rate', ylab = 'severity (modeled average score)') + sev_y
 ```
-</div>
-</div>
 
-<div class = "row">
-<div class = "col-md-5">
+#### Severity by row spacing x seeding rate
+
 ```{r, echo = FALSE}
 CLDtable(cld_sev[[6]], table_caption = 'severity by row spacing x seeding rate', cilow = asymp.LCL, cihigh = asymp.UCL, trt_labels = c('row spacing', 'seeding rate'))
 ```
-</div>
-<div class = "col-md-7">
+
 ```{r, echo = FALSE}
 CLDplot(cld_sev[[6]], xvar = RwSp, yvar = mean.class, yminvar = asymp.LCL, ymaxvar = asymp.UCL, colorvar = RwSp, colorscale = rowspacing_colorscale,
         facetvar = SdRt, xlab = 'row spacing', ylab = 'severity (modeled average score)') +
   facet_wrap(~ SdRt, labeller = as_labeller(\(x) paste('seeding rate:', x))) + sev_y
 ```
-</div>
-</div>
 
-<div class = "row">
-<div class = "col-md-5">
+#### Severity by three-way interaction of all treatments
+
 ```{r, echo = FALSE}
 CLDtable(cld_sev[[7]], table_caption = 'severity by 3-way interaction', cilow = asymp.LCL, cihigh = asymp.UCL, trt_labels = c('seed type', 'row spacing', 'seeding rate'))
 ```
-</div>
-<div class = "col-md-7">
+
 ```{r, echo = FALSE}
 ggplot(as_tibble(cld_sev[[7]]), aes(x = RwSp, y = mean.class, ymin = asymp.LCL, ymax = asymp.UCL, label = trimws(.group))) +
   geom_errorbar(size = 1, width = 0.1, aes(color = RwSp)) +
@@ -328,8 +344,6 @@ ggplot(as_tibble(cld_sev[[7]]), aes(x = RwSp, y = mean.class, ymin = asymp.LCL, 
   rowspacing_colorscale + theme(legend.position = 'none') +
   labs(x = 'row spacing', y = 'severity (modeled average score)') + sev_y
 ```
-</div>
-</div>
 
 ### Yield
 
@@ -358,15 +372,17 @@ cld_yld <- lapply(1:length(emm_yld), \(i) cld(emm_yld, which = i, Letters = lett
 
 Make plots and tables showing the difference between the treatments, with 95% confidence intervals adjusted for multiple comparisons if there are >2 groups being compared. Again, we see no significant interactions between the treatments for yield so we don't need to worry about creating interaction plots.
 
+#### Yield by seed type
+
 <div class = "row">
-<div class = "col-md-5">
+<div class = "col-md-6">
 ```{r, echo = FALSE}
 yld_y <- ylim(2000, 4610)
 
 CLDtable(cld_yld[[1]], table_caption = 'yield by seed type', cilow = lower.CL, cihigh = upper.CL, trt_labels = 'seed type')
 ```
 </div>
-<div class = "col-md-7">
+<div class = "col-md-6">
 ```{r, echo = FALSE}
 CLDplot(cld_yld[[1]], xvar = Tmt, yvar = emmean, yminvar = lower.CL, ymaxvar = upper.CL, colorvar = Tmt, colorscale = seedtype_colorscale,
         xlab = 'seed type', ylab = 'yield (kg/ha)') + yld_y
@@ -374,13 +390,15 @@ CLDplot(cld_yld[[1]], xvar = Tmt, yvar = emmean, yminvar = lower.CL, ymaxvar = u
 </div>
 </div>
 
+#### Yield by row spacing
+
 <div class = "row">
-<div class = "col-md-5">
+<div class = "col-md-6">
 ```{r, echo = FALSE}
 CLDtable(cld_yld[[2]], table_caption = 'yield by row spacing', cilow = lower.CL, cihigh = upper.CL, trt_labels = 'row spacing')
 ```
 </div>
-<div class = "col-md-7">
+<div class = "col-md-6">
 ```{r, echo = FALSE}
 CLDplot(cld_yld[[2]], xvar = RwSp, yvar = emmean, yminvar = lower.CL, ymaxvar = upper.CL, colorvar = RwSp, colorscale = rowspacing_colorscale,
         xlab = 'row spacing', ylab = 'yield (kg/ha)') + yld_y
@@ -388,13 +406,15 @@ CLDplot(cld_yld[[2]], xvar = RwSp, yvar = emmean, yminvar = lower.CL, ymaxvar = 
 </div>
 </div>
 
+#### Yield by seeding rate
+
 <div class = "row">
-<div class = "col-md-5">
+<div class = "col-md-6">
 ```{r, echo = FALSE}
 CLDtable(cld_yld[[3]], table_caption = 'yield by seeding rate', cilow = lower.CL, cihigh = upper.CL, trt_labels = 'seeding rate')
 ```
 </div>
-<div class = "col-md-7">
+<div class = "col-md-6">
 ```{r, echo = FALSE}
 CLDplot(cld_yld[[3]], xvar = SdRt, yvar = emmean, yminvar = lower.CL, ymaxvar = upper.CL, colorvar = SdRt, colorscale = seedrate_colorscale,
         xlab = 'seeding rate', ylab = 'yield (kg/ha)') + yld_y
